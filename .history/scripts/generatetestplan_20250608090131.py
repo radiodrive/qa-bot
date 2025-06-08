@@ -58,11 +58,10 @@ jira_admin = Agent(
 
 # ----- Tasks -----
 extract_ticket_info = Task(
-    description="Extract key functional requirements, AC, and edge cases from the Jira ticket: {jira_ticket_text}. Also review any recent comments to capture changes, clarifications, or additional requirements that could affect the test plan.",
-    expected_output="Structured summary including purpose, workflows to validate, edge cases, and relevant updates or changes found in ticket comments.",
+    description="Extract key functional requirements, AC, and edge cases from the Jira ticket: {jira_ticket_text}",
+    expected_output="Structured summary of the feature's purpose and scenarios to validate.",
     agent=jira_admin
 )
-
 
 generate_test_plan = Task(
     description="Using the extracted summary, generate a markdown test plan with test case breakdowns (happy path, edge, negative)",
