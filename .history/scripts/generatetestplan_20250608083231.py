@@ -1,0 +1,85 @@
+import os
+import requests
+from crewai import Agent, Task, Crew
+
+# ----- Jira API Tool -----
+class JiraTool:
+    def __init__(self, base_url, auth_token):
+        self.base_url = base_url.rstrip('/')
+        self.headers = {
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": "application/json"
+        }
+
+    def get_ticket(self, ticket_id):
+        url = f"{self.base_url}/rest/api/3/issue/{ticket_id}"
+        response = requests.get(url, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+
+    def add_comment(self, ticket_id, comment):
+        url = f"{self.base_url}/rest/api/3/issue/{ticket_id}/comment"
+        data = {"body": comment}
+        response = requests.post(url, headers=self.headers, json=data)
+        return response.status_code == 201
+
+# ----- Agent Definition -----
+jira_admin = Agent(
+    role="Jira Test Plan Generator",
+    goal="Create and document test plans from Jira ticket descriptions",
+    backstory="You are a QA engineer responsible for ensuring every Jira ticket has a proper test plan.",
+    verbose=True,
+    allow_delegation=False
+)
+
+# ----- Tasks -----
+extract_ticket_info = Task(
+    description="Extract key functional requirements, AC, and edge cases from the Jira ticket: {jira_ticket_text}",
+    expected_output="Structured summary of the feature's purpose and scenarios to validate.",
+    agent=jira_admin
+)
+
+generate_test_plan = Task(
+    description="Using the extracted summary, generate a markdown test plan with test case breakdowns (happy path, edge, negative)",
+    expected_output="A complete markdown-formatted test plan ready to be added to Jira.",
+    agent=jira_admin
+)
+
+update_jira_ticket = Task(
+    description="Take the generated test plan and add it as a comment to the original Jira ticket.",
+    expected_output="Confirmation that the Jira ticket was updated.",
+    agent=jira_admin
+)
+
+# ----- Main Execution Function -----
+def run_test_plan_generation(ticket_id, jira_base_url, jira_token):
+    jira = JiraTool(jira_base_url, jira_token)
+    ticket_data = jira.get_ticket(ticket_id)
+    
+    summary = ticket_data['fields'].get('summary', '')
+    description = ticket_data['fields'].get('description', '')
+    ticket_text = f"Summary: {summary}\n\nDescription: {description}"
+
+    crew = Crew(
+        agents=[jira_admin],
+        tasks=[extract_ticket_info, generate_test_plan, update_jira_ticket]
+    )
+
+    result = crew.run({"jira_ticket_text": ticket_text})
+
+    success = jira.add_comment(ticket_id, result)
+    print("✅ Jira updated:" if success else f"❌ Failed to update Jira for {ticket_id}")
+
+# ----- Script Entry Point for GitHub Action -----
+if __name__ == '__main__':
+    ticket_ids = os.environ['JIRA_TICKET_IDS'].split(',')
+    jira_base_url = os.environ['JIRA_BASE_URL']
+    jira_token = os.environ['JIRA_API_TOKEN']
+
+    for raw_id in ticket_ids:
+        ticket_id = raw_id.strip()
+        print(f"\n🧾 Processing ticket: {ticket_id}")
+        try:
+            run_test_plan_generation(ticket_id, jira_base_url, jira_token)
+        except Exception as e:
+            print(f"❌ Failed to process {ticket_id}: {e}")
