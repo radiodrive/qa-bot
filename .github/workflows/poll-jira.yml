@@ -1,0 +1,31 @@
+name: Poll Jira and Trigger Tests
+
+on:
+  schedule:
+    # Every 30 minutes from 09:00 to 18:30 (last run starts at 18:30), Mon–Fri
+    - cron: '0,30 9-18 * * 1-5'
+
+jobs:
+  poll-jira:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll Jira for "In Test" Issues
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+        run: |
+          echo "🔎 Checking for issues in 'In Test' status..."
+          curl -s -u "$JIRA_EMAIL:$JIRA_TOKEN" \
+            -X GET \
+            -H "Accept: application/json" \
+            "$JIRA_BASE_URL/rest/api/2/search?jql=status='In Test'" > result.json
+
+          ISSUE_COUNT=$(jq '.issues | length' result.json)
+          if [ "$ISSUE_COUNT" -gt 0 ]; then
+            echo "🚀 Found $ISSUE_COUNT issue(s) in 'In Test'."
+            # Replace this with your actual test trigger
+            echo "Triggering tests..."
+          else
+            echo "✅ No issues in 'In Test'."
+          fi
