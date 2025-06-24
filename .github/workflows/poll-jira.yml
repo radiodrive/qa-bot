@@ -14,6 +14,7 @@ jobs:
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
       JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
       GH_PAT: ${{ secrets.GH_PAT }}
+      REPO: ${{ github.repository }}
 
     steps:
       - name: Install jq
@@ -26,6 +27,12 @@ jobs:
             -X GET \
             -H "Accept: application/json" \
             "$JIRA_BASE_URL/rest/api/2/search?jql=status='In Test'" > result.json
+
+          if ! jq -e . result.json > /dev/null; then
+            echo "❌ Invalid JSON response from Jira:"
+            cat result.json
+            exit 1
+          fi
 
           ISSUE_COUNT=$(jq '.issues | length' result.json)
           echo "🔍 Found $ISSUE_COUNT issue(s) in 'In Test'"
@@ -46,12 +53,12 @@ jobs:
 
             echo "🚀 Triggering 'Generate Test Plans' for $ISSUE_KEY"
 
-            curl -X POST \
+            curl -s -X POST \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer $GH_PAT" \
-              https://api.github.com/repos/${{ github.repository }}/actions/workflows/generate-testplans.yml/dispatches \
+              "https://api.github.com/repos/$REPO/actions/workflows/generate-testplans.yml/dispatches" \
               -d "{\"ref\":\"main\", \"inputs\": {\"jira_ticket_ids\": \"$ISSUE_KEY\"}}"
 
             echo "✅ Dispatched for $ISSUE_KEY"
-            sleep 2  # optional throttle
+            sleep 2  # Optional throttle
           done
