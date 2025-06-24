@@ -1,31 +1,55 @@
-name: Poll Jira and Trigger Tests
+name: Poll Jira and Trigger Test Plan Generator
 
 on:
   schedule:
-    # Every 30 minutes from 09:00 to 18:30 (last run starts at 18:30), Mon–Fri
+    # Every 30 minutes between 9:00 and 18:30, Monday–Friday
     - cron: '0,30 9-18 * * 1-5'
 
 jobs:
-  poll-jira:
+  poll-and-trigger:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Poll Jira for "In Test" Issues
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Poll Jira for 'In Test' issues
         env:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
         run: |
-          echo "🔎 Checking for issues in 'In Test' status..."
+          echo "🔎 Querying Jira..."
           curl -s -u "$JIRA_EMAIL:$JIRA_TOKEN" \
             -X GET \
             -H "Accept: application/json" \
             "$JIRA_BASE_URL/rest/api/2/search?jql=status='In Test'" > result.json
 
           ISSUE_COUNT=$(jq '.issues | length' result.json)
-          if [ "$ISSUE_COUNT" -gt 0 ]; then
-            echo "🚀 Found $ISSUE_COUNT issue(s) in 'In Test'."
-            # Replace this with your actual test trigger
-            echo "Triggering tests..."
-          else
-            echo "✅ No issues in 'In Test'."
+          echo "Found $ISSUE_COUNT issue(s) in 'In Test'"
+
+          if [ "$ISSUE_COUNT" -eq 0 ]; then
+            echo "✅ Nothing to trigger."
+            exit 0
           fi
+
+          echo "📦 Extracting issues and dispatching workflows..."
+
+          for row in $(jq -r '.issues[] | @base64' result.json); do
+            _jq() {
+              echo "${row}" | base64 --decode | jq -r "${1}"
+            }
+
+            ISSUE_KEY=$(_jq '.key')
+
+            echo "🚀 Triggering 'Generate Test Plans' for $ISSUE_KEY"
+
+            curl -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+              https://api.github.com/repos/${{ github.repository }}/actions/workflows/generate-testplans.yml/dispatches \
+              -d "{\"ref\":\"main\", \"inputs\": {\"jira_ticket_ids\": \"$ISSUE_KEY\"}}"
+
+            echo "✅ Dispatched for $ISSUE_KEY"
+            sleep 2  # Optional: delay to avoid rate limits
+          done
