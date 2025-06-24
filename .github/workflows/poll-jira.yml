@@ -2,32 +2,33 @@ name: Poll Jira and Trigger Test Plan Generator
 
 on:
   schedule:
-    # Every 30 minutes between 9:00 and 18:30, Monday–Friday
-    - cron: '* * * * *'
-  workflow_dispatch:
+    - cron: '* * * * *'  # Every minute (for testing)
+  workflow_dispatch:     # Manual run enabled
 
 jobs:
   poll-and-trigger:
     runs-on: ubuntu-latest
 
+    env:
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+
     steps:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Poll Jira for 'In Test' issues
-        env:
-          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      - name: Poll Jira for 'In Test' issues and trigger test plan generation
         run: |
           echo "🔎 Querying Jira..."
-          curl -s -u "$JIRA_EMAIL:$JIRA_TOKEN" \
+          curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_TOKEN" \
             -X GET \
             -H "Accept: application/json" \
             "$JIRA_BASE_URL/rest/api/2/search?jql=status='In Test'" > result.json
 
           ISSUE_COUNT=$(jq '.issues | length' result.json)
-          echo "Found $ISSUE_COUNT issue(s) in 'In Test'"
+          echo "🔍 Found $ISSUE_COUNT issue(s) in 'In Test'"
 
           if [ "$ISSUE_COUNT" -eq 0 ]; then
             echo "✅ Nothing to trigger."
@@ -47,10 +48,10 @@ jobs:
 
             curl -X POST \
               -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+              -H "Authorization: Bearer $GH_PAT" \
               https://api.github.com/repos/${{ github.repository }}/actions/workflows/generate-testplans.yml/dispatches \
               -d "{\"ref\":\"main\", \"inputs\": {\"jira_ticket_ids\": \"$ISSUE_KEY\"}}"
 
             echo "✅ Dispatched for $ISSUE_KEY"
-            sleep 2  # Optional: delay to avoid rate limits
+            sleep 2  # optional throttle
           done
