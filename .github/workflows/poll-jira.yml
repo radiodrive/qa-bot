@@ -3,7 +3,7 @@ name: Poll Jira and Trigger Test Plan Generator
 on:
   schedule:
     # Every 30 minutes between 9:00 and 18:30, Monday–Friday
-    - cron: '0,30 9-18 * * 1-5'
+    - cron: '* * * * *'
 
 jobs:
   poll-and-trigger:
