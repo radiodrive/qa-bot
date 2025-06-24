@@ -4,6 +4,7 @@ on:
   schedule:
     # Every 30 minutes between 9:00 and 18:30, Monday–Friday
     - cron: '* * * * *'
+  workflow_dispatch:
 
 jobs:
   poll-and-trigger:
